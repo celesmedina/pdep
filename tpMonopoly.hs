@@ -1,37 +1,87 @@
-main :: IO ()    -- This says that main is an IO action.
-main = return () 
+import Text.Show.Functions
 
-data Participante=Participante String Int String [(String, Int)] [String] deriving (Show)
+main :: IO ()
+main = return ()
 
-carolina=Participante  "Carolina" 500 "Accionista" [] ["pagarAAccionistas"]
-manuel=Participante  "Manuel" 500 "Oferente singular" [] ["pasarPorElBanco", "enojarse"]
+type Propiedad = (String, Int)
+type Accion = Participante -> Participante
 
+data Participante = Participante {
+  nombre::String,
+  dinero::Int,
+  tactica::String,
+  propiedades::[ Propiedad ],
+  acciones::[ Accion ]
+} deriving Show
 
-pasarPorElBanco::Participante->Participante
-pasarPorElBanco (Participante nombre dinero tactica propiedades acciones)=Participante nombre (dinero+40) "Comprador compulsivo" propiedades acciones
+sumarDinero monto participante = participante { dinero = (dinero participante) + monto }
 
-enojarse::Participante->Participante
-enojarse (Participante nombre dinero tactica propiedades acciones)=Participante nombre (dinero+50) tactica propiedades ("gritar":acciones)
+pasarPorElBanco :: Participante -> Participante
+pasarPorElBanco (Participante nombre dinero tactica propiedades acciones) = Participante nombre (dinero + 40) "Comprador compulsivo" propiedades acciones
 
-gritar::Participante->Participante
-gritar (Participante nombre dinero tactica propiedades acciones)=Participante ("AHHHH"++nombre) dinero tactica propiedades acciones
+enojarse :: Participante -> Participante
+enojarse (Participante nombre dinero tactica propiedades acciones) = Participante nombre (dinero + 50) tactica propiedades (acciones ++ [gritar])
 
-subastar::Participante->(String,Int)->Participante
-subastar (Participante nombre dinero tactica propiedades acciones) (nombrePropiedad, precio)| tactica=="Oferente singular" ||tactica=="Accionista"= Participante nombre (dinero-precio) tactica ((nombrePropiedad, precio):propiedades) acciones
-                                                                                            |otherwise=Participante nombre dinero tactica propiedades acciones
+gritar :: Participante -> Participante
+gritar participante = participante {
+  nombre = ("AHHHH" ++ nombre participante)
+}
 
-esBarata::(String,Int)->Bool
-esBarata (_,precio)=precio<150
+esTacticaGanadora :: String -> Bool
+esTacticaGanadora "Oferente singular" = True
+esTacticaGanadora "Accionista" = True
+esTacticaGanadora _ = False
 
-sumarAlquileresBaratos::[(String,Int)]->Int
-sumarAlquileresBaratos propiedades= length(filter esBarata propiedades)*10
+adquirirPropiedad :: Propiedad -> Accion
+adquirirPropiedad propiedad persona
+  = persona {
+    propiedades = (propiedad : propiedades persona),
+    dinero = (dinero persona - snd propiedad)
+  }
 
-sumarAlquileresCaros::[(String,Int)]->Int
-sumarAlquileresCaros propiedades=length (filter (not.esBarata) propiedades)*20
+subastar :: Propiedad -> Accion
+subastar propiedad persona
+  | esTacticaGanadora . tactica $ persona = adquirirPropiedad propiedad persona
+  | otherwise=persona
 
-cobrarAlquileres::Participante->Participante
-cobrarAlquileres (Participante nombre dinero tactica propiedades acciones)= Participante nombre (dinero+(sumarAlquileresCaros propiedades +sumarAlquileresBaratos propiedades)) tactica propiedades acciones   
+esBarata :: Propiedad -> Bool
+esBarata (_, precio) = precio < 150
 
-pagarAAccionistas::Participante->Participante
-pagarAAccionistas (Participante nombre dinero tactica propiedades acciones)|tactica=="Accionista"=Participante nombre (dinero+200) tactica propiedades acciones 
-                                                                           | otherwise=Participante nombre (dinero-100) tactica propiedades acciones
+calcularValorPropiedad :: Propiedad -> Int
+calcularValorPropiedad propiedad
+  | esBarata propiedad = 10
+  | otherwise = 20
+
+sumarAlquileresPropiedades :: [Propiedad]->Int
+sumarAlquileresPropiedades propiedades = sum (map calcularValorPropiedad propiedades)
+
+sumarAlquileres :: Participante -> Int
+sumarAlquileres participante = sumarAlquileresPropiedades (propiedades participante)
+
+cobrarAlquileres :: Participante -> Participante
+cobrarAlquileres participante = sumarDinero (sumarAlquileres participante) participante
+
+pagarAAccionistas :: Participante -> Participante
+pagarAAccionistas participante
+  | tactica participante == "Accionista"  = sumarDinero 200 participante
+  | otherwise                             = sumarDinero (-100) participante
+
+hacerBerrinchePor :: Propiedad -> Accion
+hacerBerrinchePor propiedad participante
+  | snd propiedad <= dinero participante  = adquirirPropiedad propiedad participante
+  | otherwise                             = hacerBerrinchePor propiedad (gritar (sumarDinero 10 participante))
+
+ultimaRonda :: Participante -> Participante
+ultimaRonda participante
+  = foldl (\p fn -> fn p) participante (acciones participante)
+
+juegoFinal :: Participante -> Participante -> Participante
+juegoFinal participante1 participante2
+  | dinero (ultimaRonda participante1) > dinero (ultimaRonda participante2) = ultimaRonda participante1
+  | otherwise = ultimaRonda participante2
+
+-- Modelar a Carolina y Manuel
+carolina :: Participante
+manuel :: Participante
+carolina = Participante  "Carolina" 500 "Accionista" [] [pasarPorElBanco, pagarAAccionistas]
+manuel = Participante  "Manuel" 500 "Oferente singular" [] [pasarPorElBanco, enojarse]
